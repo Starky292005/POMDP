@@ -78,8 +78,12 @@ def movement_reachable(base_idx, model):
 
 def search_observation_distribution(points, uav_cell, victim_cell):
     d = float(np.linalg.norm(points[uav_cell] - points[victim_cell]))
-    near = d <= config.SEARCH_RADIUS_DIST
-    p_found = config.P_FOUND_NEAR if near else config.P_FALSE_ALARM
+    if d == 0.0:
+        p_found = config.P_FOUND_NEAR
+    elif d <= config.SEARCH_RADIUS_DIST:
+        p_found = config.P_FALSE_ALARM + (config.P_FOUND_NEAR - config.P_FALSE_ALARM) * (1.0 - (d / config.SEARCH_RADIUS_DIST))
+    else:
+        p_found = config.P_FALSE_ALARM
     return {"FOUND": p_found, "NOT_FOUND": 1.0 - p_found}
 
 def observation_probability(points, belief, uav_cell, action, observation):
@@ -113,12 +117,18 @@ def move_reward(model, threats, uav_cell, action):
     occupancy = config.THREAT_OCCUPANCY_PENALTY if uav_cell in threats else 0.0
     dist = transition_distribution(model, uav_cell, action)
     p_blocked = dist.get(uav_cell, 0.0)
-    p_threat_entry = sum(p for target, p in dist.items() if target in threats)
+    p_threat_entry = sum(p for target, p in dist.items() if target in threats and target != uav_cell)
     return occupancy + config.MOVE_COST + p_blocked * config.BLOCKED_PENALTY + p_threat_entry * config.THREAT_ENTRY_PENALTY
 
 def immediate_reward_search(points, threats, belief, uav_cell, action, model):
     if action == "SEARCH":
         occupancy = config.THREAT_OCCUPANCY_PENALTY if uav_cell in threats else 0.0
-        p_found = observation_probability(points, belief, uav_cell, action, "FOUND")
-        return occupancy + p_found * config.SEARCH_FOUND_REWARD + (1.0 - p_found) * config.SEARCH_NOT_FOUND_PENALTY
+        expected_search_reward = 0.0
+        for victim, b in belief.items():
+            if victim == uav_cell:
+                reward_v = config.P_FOUND_NEAR * config.SEARCH_FOUND_REWARD + (1.0 - config.P_FOUND_NEAR) * config.SEARCH_NOT_FOUND_PENALTY
+            else:
+                reward_v = config.SEARCH_NOT_FOUND_PENALTY
+            expected_search_reward += b * reward_v
+        return occupancy + expected_search_reward
     return move_reward(model, threats, uav_cell, action)

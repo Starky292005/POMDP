@@ -130,6 +130,16 @@ def run_simulation(
     history = []
     found = False
 
+    try:
+        with open("seeds_latest_last.txt", "r") as file:
+            seeds = file.readlines()
+    except FileNotFoundError:
+        seeds = []
+    seeds.append(f"{seed}\n")
+    seeds = seeds[-50:]
+    with open("seeds_latest_last.txt", "w") as file:
+        file.writelines(seeds)
+
     print("=" * 64)
     print(" UAV DISASTER RESPONSE — VORONOI-GRID POMDP")
     print("=" * 64)
@@ -180,7 +190,7 @@ def run_simulation(
             f"Entropy metric = {entropy(belief):.3f} | Value = {action_values[action]:.3f}"
         )
 
-        if action == "SEARCH" and observation == "FOUND":
+        if action == "SEARCH" and observation == "FOUND" and uav_cell == victim:
             found = True
             print(f"\nTarget object identified at index: {victim}")
             break

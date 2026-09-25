@@ -1,10 +1,12 @@
 import config
 import models
 
+
 class SearchPhasePlanner:
     """
     Executes a finite-horizon lookahead in belief space to identify the optimal action.
     """
+
     def __init__(self, world, transition_model, horizon=config.PLANNING_HORIZON, gamma=config.GAMMA):
         self.points = world["points"]
         self.threats = world["threats"]
@@ -28,18 +30,32 @@ class SearchPhasePlanner:
             if p_obs <= 1e-12:
                 continue
 
-            next_belief = models.update_belief(self.points, belief, uav_cell, action, observation)
+            if action == "SEARCH" and observation == "FOUND":
+                p_term = belief.get(uav_cell, 0.0) * config.P_FOUND_NEAR
+                p_cont = p_obs - p_term
 
-            if action == "SEARCH":
-                next_positions = {uav_cell: 1.0}
+                if p_cont > 1e-12:
+                    next_belief = models.update_belief(self.points, belief, uav_cell, action, observation)
+                    next_positions = {uav_cell: 1.0}
+
+                    future_for_obs = 0.0
+                    for next_cell, p_trans in next_positions.items():
+                        future_for_obs += p_trans * self.value(next_belief, next_cell, depth - 1)
+
+                    total_future += p_cont * future_for_obs
             else:
-                next_positions = models.transition_distribution(self.transition_model, uav_cell, action)
+                next_belief = models.update_belief(self.points, belief, uav_cell, action, observation)
 
-            future_for_obs = 0.0
-            for next_cell, p_trans in next_positions.items():
-                future_for_obs += p_trans * self.value(next_belief, next_cell, depth - 1)
+                if action == "SEARCH":
+                    next_positions = {uav_cell: 1.0}
+                else:
+                    next_positions = models.transition_distribution(self.transition_model, uav_cell, action)
 
-            total_future += p_obs * future_for_obs
+                future_for_obs = 0.0
+                for next_cell, p_trans in next_positions.items():
+                    future_for_obs += p_trans * self.value(next_belief, next_cell, depth - 1)
+
+                total_future += p_obs * future_for_obs
 
         return reward + self.gamma * total_future
 
