@@ -44,9 +44,9 @@ def build_movement_model(points, adjacency, obstacles):
                     target = c
                 dist[target] = dist.get(target, 0.0) + p
 
-            add(intended, 0.8)
-            add(deviation_a, 0.1)
-            add(deviation_b, 0.1)
+            add(intended, config.REACH_INTENDED)
+            add(deviation_a, config.LAT_DEV_A)
+            add(deviation_b, config.LAT_DEV_B)
 
             model[c][action] = dist
 
@@ -117,18 +117,22 @@ def move_reward(model, threats, uav_cell, action):
     occupancy = config.THREAT_OCCUPANCY_PENALTY if uav_cell in threats else 0.0
     dist = transition_distribution(model, uav_cell, action)
     p_blocked = dist.get(uav_cell, 0.0)
-    p_threat_entry = sum(p for target, p in dist.items() if target in threats and target != uav_cell)
+    p_threat_entry = sum(p for target, p in dist.items() if target in threats)
     return occupancy + config.MOVE_COST + p_blocked * config.BLOCKED_PENALTY + p_threat_entry * config.THREAT_ENTRY_PENALTY
+
 
 def immediate_reward_search(points, threats, belief, uav_cell, action, model):
     if action == "SEARCH":
         occupancy = config.THREAT_OCCUPANCY_PENALTY if uav_cell in threats else 0.0
-        expected_search_reward = 0.0
-        for victim, b in belief.items():
-            if victim == uav_cell:
-                reward_v = config.P_FOUND_NEAR * config.SEARCH_FOUND_REWARD + (1.0 - config.P_FOUND_NEAR) * config.SEARCH_NOT_FOUND_PENALTY
-            else:
-                reward_v = config.SEARCH_NOT_FOUND_PENALTY
-            expected_search_reward += b * reward_v
-        return occupancy + expected_search_reward
+
+        p_on_target = belief.get(uav_cell, 0.0)
+        max_p = max(belief.values())
+
+        exploration_bonus = 2.0 if p_on_target >= max_p else -2.0
+
+        expected_payout = (p_on_target ** 2) * config.SEARCH_FOUND_REWARD
+        expected_penalty = (1.0 - p_on_target) * config.SEARCH_NOT_FOUND_PENALTY
+
+        return occupancy + exploration_bonus + expected_payout + expected_penalty
+
     return move_reward(model, threats, uav_cell, action)

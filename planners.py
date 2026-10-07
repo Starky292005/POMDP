@@ -1,5 +1,40 @@
 import config
 import models
+import math
+
+def calculate_expected_hitting_time(world, transition_model, max_iters=5000, tol=1e-6):
+    """
+    Computes the exact expected number of stochastic state transitions required to return
+    from the topologically furthest node to the base coordinate.
+    """
+    base = world["base_idx"]
+    reachable = world["reachable"]
+
+    V = {c: 0.0 for c in reachable}
+
+    for _ in range(max_iters):
+        delta = 0.0
+        V_new = {}
+        for c in reachable:
+            if c == base:
+                V_new[c] = 0.0
+                continue
+
+            best_steps = float("inf")
+            for a in config.ACTIONS_RETURN:
+                dist = models.transition_distribution(transition_model, c, a)
+                future = sum(p * V.get(c2, 0.0) for c2, p in dist.items())
+                # Calculate cost strictly as 1.0 step. Threat and block penalties are 0.0.
+                best_steps = min(best_steps, 1.0 + future)
+
+            V_new[c] = best_steps
+            delta = max(delta, abs(V_new[c] - V[c]))
+
+        V = V_new
+        if delta < tol:
+            break
+
+    return int(math.ceil(max(V.values())))
 
 
 class SearchPhasePlanner:
@@ -30,32 +65,18 @@ class SearchPhasePlanner:
             if p_obs <= 1e-12:
                 continue
 
-            if action == "SEARCH" and observation == "FOUND":
-                p_term = belief.get(uav_cell, 0.0) * config.P_FOUND_NEAR
-                p_cont = p_obs - p_term
+            next_belief = models.update_belief(self.points, belief, uav_cell, action, observation)
 
-                if p_cont > 1e-12:
-                    next_belief = models.update_belief(self.points, belief, uav_cell, action, observation)
-                    next_positions = {uav_cell: 1.0}
-
-                    future_for_obs = 0.0
-                    for next_cell, p_trans in next_positions.items():
-                        future_for_obs += p_trans * self.value(next_belief, next_cell, depth - 1)
-
-                    total_future += p_cont * future_for_obs
+            if action == "SEARCH":
+                next_positions = {uav_cell: 1.0}
             else:
-                next_belief = models.update_belief(self.points, belief, uav_cell, action, observation)
+                next_positions = models.transition_distribution(self.transition_model, uav_cell, action)
 
-                if action == "SEARCH":
-                    next_positions = {uav_cell: 1.0}
-                else:
-                    next_positions = models.transition_distribution(self.transition_model, uav_cell, action)
+            future_for_obs = 0.0
+            for next_cell, p_trans in next_positions.items():
+                future_for_obs += p_trans * self.value(next_belief, next_cell, depth - 1)
 
-                future_for_obs = 0.0
-                for next_cell, p_trans in next_positions.items():
-                    future_for_obs += p_trans * self.value(next_belief, next_cell, depth - 1)
-
-                total_future += p_obs * future_for_obs
+            total_future += p_obs * future_for_obs
 
         return reward + self.gamma * total_future
 
@@ -110,6 +131,6 @@ def solve_return_policy(world, transition_model, gamma=config.GAMMA, max_iters=5
             q = r + gamma * future
             if q > best_q:
                 best_q, best_a = q, a
-            policy[c] = best_a
+        policy[c] = best_a
 
     return policy, V

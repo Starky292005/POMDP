@@ -1,7 +1,6 @@
 import math
 import numpy as np
 from scipy.spatial import Voronoi
-
 import config
 import world
 import models
@@ -105,8 +104,8 @@ def run_simulation(
     threat_fraction=config.THREAT_FRACTION,
     min_reachable=config.MIN_REACHABLE,
     max_search_steps=config.MAX_SEARCH_STEPS,
-    max_return_steps=config.MAX_RETURN_STEPS,
 ):
+
     if seed is None:
         seed = int(np.random.SeedSequence().entropy % (2**32))
     rng = np.random.default_rng(seed)
@@ -122,6 +121,7 @@ def run_simulation(
 
     victim_states = sorted(c for c in env_world["reachable"] if c != base)
     belief = {v: 1.0 / len(victim_states) for v in victim_states}
+    dynamic_return_steps = planners.calculate_expected_hitting_time(env_world, transition_model)
 
     planner = planners.SearchPhasePlanner(env_world, transition_model)
 
@@ -150,6 +150,7 @@ def run_simulation(
     print(f"Obstacle arrays       : {sorted(env_world['obstacles'])}")
     print(f"Threat arrays         : {sorted(env_world['threats'])}")
     print(f"Search step limit     : {max_search_steps}")
+    print(f"Return step limit     : {dynamic_return_steps}")
     print(f"Planning horizon      : {planner.horizon}   Discount factor: {planner.gamma}\n")
 
     for step in range(1, max_search_steps + 1):
@@ -187,12 +188,14 @@ def run_simulation(
             f"[SEARCH] Step {step:2d}: {old_cell:2d} -> {uav_cell:2d} | "
             f"Action = {action:6s} | Observation = {observation:9s} | "
             f"Target parameter = {likely:2d} ({belief[likely]:.3f}) | "
-            f"Entropy metric = {entropy(belief):.3f} | Value = {action_values[action]:.3f}"
+            f"Entropy metric = {entropy(belief):.3f} | Value = {action_values[action]:.3f} | "
+            f"Confidence = {(belief.get(uav_cell, 0.0)*100):.3f}%"
         )
 
-        if action == "SEARCH" and observation == "FOUND" and uav_cell == victim:
+        CONFIDENCE_THRESHOLD = 0.75
+        if action == "SEARCH" and belief.get(uav_cell, 0.0) >= CONFIDENCE_THRESHOLD:
             found = True
-            print(f"\nTarget object identified at index: {victim}")
+            print(f"\nTarget object identified at index: {uav_cell} with {belief[uav_cell]*100:.1f}% confidence.")
             break
 
     search_steps_used = len(history)
@@ -209,7 +212,7 @@ def run_simulation(
     if returned:
         print("UAV system is at base coordinates.")
 
-    for step in range(1, max_return_steps + 1):
+    for step in range(1, dynamic_return_steps + 1):
         if returned:
             break
 
@@ -248,8 +251,8 @@ def run_simulation(
             returned = True
 
     print("\n" + "-" * 64)
-    print(f"Target object identified : {int(found)}")
-    print(f"Return sequence complete : {int(returned)}")
+    print(f"Target object identified : {'ACCOMPLISHED' if int(found) == 1 else 'FAILED'}")
+    print(f"Return sequence complete : {'ACCOMPLISHED' if int(returned) == 1 else 'FAILED'}")
     print(f"Total steps executed     : {len(history)}")
     print(f"Search steps executed    : {search_steps_used}")
     print(f"Return steps executed    : {len(history) - search_steps_used}")
