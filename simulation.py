@@ -182,6 +182,7 @@ def run_simulation(
             "entropy": entropy(belief),
             "expected_value": action_values[action],
             "belief": belief.copy(),
+            "confidence": belief.get(uav_cell, 0.0) * 100,
         })
 
         print(
@@ -240,6 +241,7 @@ def run_simulation(
             "entropy": entropy(belief),
             "expected_value": V.get(old_cell, 0.0),
             "belief": belief.copy(),
+            "confidence": belief.get(uav_cell, 0.0) * 100,
         })
 
         print(

@@ -141,7 +141,8 @@ def _draw_animation_frames(fig, ax, ax2, world, history, path):
         status.set_text(
             f"Step {item['step']} [{item['phase']}]  |  Action: {item['action']}  |  "
             f"Observation: {item['observation']}  |  Entropy: {item['entropy']:.3f}  |  "
-            f"Value: {item['expected_value']:.3f}"
+            f"Value: {item['expected_value']:.3f} | "
+            f"Confidence: {item['confidence']:.3f}%"
         )
 
         return path_line, uav_marker, pc2, status
